@@ -6,10 +6,21 @@ const { Readable } = require('stream');
 const isDev = require('electron-is-dev');
 const Settings = require('./SettingsStore')
 const WebSocket = require('ws');
+const JMuxer = require('./jmuxer.min');
 const mp4Reader = new Readable({
+    objectMode: true,
     read(size) {
     }
 });
+const jmuxer = new JMuxer({
+    mode: 'video',
+    fps: 30,
+    debug: true
+});
+
+mp4Reader.on('data', (data) => {
+    console.log(data.video.length)
+})
 console.log(app.getPath('userData'))
 const settings = new Settings()
 const Carplay = require('node-carplay')
@@ -24,12 +35,7 @@ wss.on('connection', function connection(ws) {
     const wsstream = WebSocket.createWebSocketStream(ws);
     //lets pipe into jmuxer stream, then websocket
     //mp4Reader.pipe(wsstream);
-    mp4Reader.on('data', (data) => {
-        console.log(data)
-        //buffers.push(data)
-
-            ws.send(data)
-    })
+    mp4Reader.pipe(jmuxer.createStream()).pipe(wsstream)
 
     // setInterval(() => {
     //     if(buffers.length > 0) {

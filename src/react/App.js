@@ -47,24 +47,37 @@ class App extends Component {
             tStart: new Date(),
             vPlaying: false
         }
+        this.chunks = [];
+        this.sourceBuffer= null;
+        this.mse = new (MediaSource)()
+        console.log("mse", this.mse)
 
     }
 
     componentDidMount() {
+        console.log("mounting")
         Modal.setAppElement(document.getElementById('main'));
         let fps = 60
         console.log(fps)
         fps = ipcRenderer.sendSync('fpsReq')
         console.log(fps)
-        const jmuxer = new JMuxer({
-            node: 'player',
-            mode: 'video',
-            maxDelay: 30,
-            fps: 30,
-            flushingTime: 100,
-            debug: false
+        var video = document.getElementById('player');
+        video.src = URL.createObjectURL(this.mse);
+        this.mse.addEventListener('sourceopen', () => this.onMediaSourceOpen());
 
+        var socketURL = 'ws://localhost:3001';
+
+        var ws = new WebSocket(socketURL);
+        ws.binaryType = 'arraybuffer';
+        ws.addEventListener('message',(event) => {
+            this.chunks.push(new Uint8Array(event.data));
+            this.addMoreBuffer();
         });
+
+        ws.addEventListener('error', function(e) {
+            console.log('Socket Error');
+        });
+
         const height = this.divElement.clientHeight
         const width = this.divElement.clientWidth
         // const canvas = document.querySelector("canvas");
@@ -99,32 +112,43 @@ class App extends Component {
             if(this.state.status) {
                 this.setState({modalOpen: true})
             }
-        })
-
-        setInterval(() => {
-            this.bufferCheck()
-        }, 10)
-
-        ipcRenderer.send('statusReq')
-        const ws = new WebSocket("ws://localhost:3001");
-        ws.binaryType = 'arraybuffer';
-        ws.onmessage = (event) => {
-
-
-            //this.setState({lastFrame: new Date()})
-            //
-            let buf = Buffer.from(event.data)
-            let duration = buf.readInt32BE(0)
-            let video = buf.slice(4)
-            jmuxer.feed({video: new Uint8Array(video)})
-        }
-
-        // setInterval(() => {
+        })        // setInterval(() => {
         //     let player = document.getElementById('player')
         //     console.log(player.duration)
         //     console.log(player.currentTime)
         // }, 500)
+        setInterval(() => this.remove(), 1000)
 
+    }
+
+    onMediaSourceOpen() {
+        console.log(this.sourceBuffer)
+        console.log(this.mse)
+        this.sourceBuffer = this.mse.addSourceBuffer('video/mp4; codecs="avc1.4d401f"');
+        this.sourceBuffer.addEventListener('updateend', () => this.addMoreBuffer());
+        var video = document.getElementById('player');
+        video.play();
+    }
+
+    remove() {
+        let end = this.sourceBuffer.buffered
+        if(end.length > 0) {
+            end = end.end(0)
+            if(end > 61 && (Math.floor(end) % 30 === 0)) {
+                console.log('removing')
+                let start = end -60
+                let newEnd = end - 30
+                //this.sourceBuffer.remove(start, newEnd)
+            }
+        }
+
+    }
+
+    addMoreBuffer() {
+        if (this.sourceBuffer.updating || !this.chunks.length) {
+            return;
+        }
+        this.sourceBuffer.appendBuffer(this.chunks.shift());
     }
 
     bufferCheck() {
